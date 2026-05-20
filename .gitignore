@@ -1,0 +1,9 @@
+# IDE
+.idea/
+
+# Python
+.venv/
+
+# Protobufs compilation
+proto/
+
