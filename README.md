@@ -8,10 +8,7 @@ A Python library for handling and processing Blue Protocol: Star Resonance commu
 ### Frame and Messages
 
 ```python
-from star_resonance_tracer.frame import Compression, MsgType
-from star_resonance_tracer.msg import Msg
-
-
+# star_resonance_tracer.frame
 class Frame:
     length: int
     compression: Compression
@@ -21,38 +18,70 @@ class Frame:
     @classmethod
     def from_raw(cls, data: bytes): ...
 
-
+    
+# star_resonance_tracer.msg
 class CallMsg(Msg):
-    ...
+    service_uuid: int
+    stub_id: int
+    call_id: int
+    method_id: int
+    data: bytes
+    
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
 
 
 class NotifyMsg(Msg):
-    ...
+    service_uuid: int
+    stub_id: int
+    method_id: int
+    data: bytes
+
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
 
 
 class ReturnMsg(Msg):
-    ...
+    stub_id: int
+    call_id: int
+    error_id: int
+    data: bytes
+
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
 
 
 class EchoMsg(Msg):
-    ...
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
 
 
 class FrameUpMsg(Msg):
-    ...
+    client_sequence: int
+    data: bytes
+
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
+    
+    @property
+    def nested_frames(self) -> Iterable[Frame]: ...
 
 
 class FrameDownMsg(Msg):
-    ...
+    server_sequence: int
+    data: bytes
+
+    @classmethod
+    def from_raw(cls, data: bytes, *, zstd: bool = False): ...
+
+    @property
+    def nested_frames(self) -> Iterable[Frame]: ...
 ```
 
 ### Processing
 
 ```python
-from typing import Iterator
-
-from star_resonance_tracer.frame import *
-from star_resonance_tracer.msg import *
+# star_resonance_tracer.processor
 
 # Lower level methods to directly parse byte payloads
 def process_frame(frame: Frame) -> Iterator[Msg]: ...
@@ -63,14 +92,7 @@ def process_bytes(data: bytes) -> Iterator[Msg]: ...
 ### Sniffing
 
 ```python
-from typing import Callable
-
-from google.protobuf.message import Message
-
-from star_resonance_tracer.frame import Frame
-from star_resonance_tracer.msg import Msg
-from star_resonance_tracer.sniffer import Connection
-
+# star_resonance_tracer.sniffer
 
 # High level utility to process stream of packets with callbacks
 class Sniffer:
