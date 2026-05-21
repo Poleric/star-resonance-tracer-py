@@ -100,11 +100,7 @@ class Sniffer:
    ```bash
    git submodule update --init --recursive
    ```
-2. Generate BPSR protocol buffers.
-   ```bash
-   uv run --dev scripts/generate_protobufs.py
-   ```
-3. Build
+2. Build
    ```bash
    uv build
    ```
