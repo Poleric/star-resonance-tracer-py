@@ -40,5 +40,6 @@ jobs:
             -   name: Upload artifact
                 uses: actions/upload-artifact@v7
                 with:
-                    path: ./dist/*
-                    archive: false
+                    path: ./dist
+                    if-no-files-found: "error"
+
