@@ -31,9 +31,6 @@ jobs:
             -   name: Install the project
                 run: uv sync --locked --all-extras --dev
 
-            -   name: Generate protobufs
-                run: uv run --dev scripts/generate_protobufs.py
-
             -   name: Build
                 run: uv build
 
