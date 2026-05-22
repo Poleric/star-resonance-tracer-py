@@ -1,27 +1,32 @@
+import itertools
 from base64 import b64decode
 from tomllib import load
 
 from zstandard.backend_c import ZstdError
 
-from star_resonance_tracer.sniffer import Sniffer, ServerPort, Connection
+from star_resonance_tracer.connection import ManualConnectionDetector, Connection, Endpoint
+from star_resonance_tracer.sniffer import Sniffer
 
 with open("tcp_stream.toml", "rb") as fp:
     TCP_STREAM = load(fp)
 
 if __name__ == '__main__':
-    sniffer = Sniffer()
+    peers = [
+        Endpoint(peer["host"], peer["port"])
+        for peer in TCP_STREAM["peers"]
+    ]
+
+    detector = ManualConnectionDetector()
+    for p1, p2 in itertools.permutations(peers):
+        detector.add_connection(Connection(p1, p2))
+
+    sniffer = Sniffer(detector)
     sniffer.on_frame(lambda frame: print(frame))
     sniffer.on_message(lambda msg: print(msg))
 
-    peers = [
-        ServerPort(peer["host"], peer["port"])
-        for peer in TCP_STREAM["peers"]
-    ]
-    sniffer.add_connection(Connection(peers[0], peers[1]))
-    sniffer.add_connection(Connection(peers[1], peers[0]))
-
     for packet in TCP_STREAM["packets"]:
         peer: int = packet["peer"]
+
         connection = Connection(peers[peer], peers[(peer + 1) % 2])
         payload = b64decode(packet["data"])
 

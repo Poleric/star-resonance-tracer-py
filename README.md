@@ -17,8 +17,9 @@ class Frame:
 
     @classmethod
     def from_raw(cls, data: bytes): ...
+```
 
-    
+```python
 # star_resonance_tracer.msg
 class CallMsg(Msg):
     service_uuid: int
@@ -92,10 +93,49 @@ def process_bytes(data: bytes) -> Iterator[Msg]: ...
 ### Sniffing
 
 ```python
+# star_resonance_tracer.connection
+class Endpoint:
+    ip: str
+    port: int
+
+
+class Connection:
+    src: Endpoint
+    dst: Endpoint
+
+    @classmethod
+    def from_tuple(cls, src_ip: str, src_port: int, dst_ip: str, dst_port: int): ...
+
+
+class ConnectionDetector(Protocol):
+    def is_server(self, connection: Connection, payload: bytes) -> bool: ...
+    def reset(self) -> None: ...
+
+    
+class PidBasedConnectionDetector(ConnectionDetector):
+    def add_from_pid(self, pid: int) -> int: ...
+    def is_server(self, connection: Connection, payload: bytes) -> bool: ...
+    def reset(self) -> None: ...
+
+
+class SignatureBasedConnectionDetector(ConnectionDetector):
+    def is_server(self, connection: Connection, payload: bytes) -> bool: ...
+    def reset(self) -> None: ...
+
+
+class ManualConnectionDetector(ConnectionDetector):
+    def add_connection(self, connection: Connection) -> None: ...
+    def is_server(self, connection: Connection, payload: bytes) -> bool: ...
+    def reset(self) -> None: ...
+```
+
+```python
 # star_resonance_tracer.sniffer
 
 # High level utility to process stream of packets with callbacks
 class Sniffer:
+    def __init__(self, connection_detector: ConnectionDetector): ...
+    
     # Configure service types and the associated protobuf message
     def set_service_type[T: Message](self, service_id: int, method_id: int, msg_type: type[T]) -> None: ...
     def set_return_type[T: Message, K: Message](self, call_type: type[T], return_type: type[K]) -> None: ...

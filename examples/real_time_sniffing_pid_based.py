@@ -9,13 +9,18 @@ from scapy.layers.inet import TCP, IP
 from scapy.packet import Packet, Raw
 from scapy.sendrecv import sniff
 
-from star_resonance_tracer.connection import SignatureBasedConnectionDetector, Connection
+from star_resonance_tracer.connection import PidBasedConnectionDetector, Connection
 from star_resonance_tracer.sniffer import Sniffer
 
 conf.layers.filter([TCP, IP])
 
 if __name__ == '__main__':
-    detector = SignatureBasedConnectionDetector()
+    detector = PidBasedConnectionDetector()
+    while True:
+        detected = detector.add_from_pid(int(input("Program PID: ")))
+        if detected:
+            break
+        print("No TCP connection found")
 
     sniffer = Sniffer(detector)
     sniffer.on_frame(lambda frame: print(frame))
