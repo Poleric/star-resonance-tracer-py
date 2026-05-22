@@ -1,6 +1,5 @@
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Callable
 
 from cachetools import TTLCache
@@ -9,34 +8,14 @@ from google.protobuf.message import Message
 from star_resonance_tracer.frame import Frame
 from star_resonance_tracer.msg import Msg, CallMsg, NotifyMsg, ReturnMsg
 from star_resonance_tracer.processor import process_frame
+from star_resonance_tracer.connection import ConnectionDetector, Connection
 from star_resonance_tracer.utils import TCPReassembler
 
 logger = logging.getLogger(__name__)
 
 __all__ = (
-    "ServerPort",
-    "Connection",
-    "Sniffer"
+    "Sniffer",
 )
-
-
-@dataclass(frozen=True, slots=True)
-class ServerPort:
-    ip: str
-    port: int
-
-
-@dataclass(frozen=True, slots=True)
-class Connection:
-    src: ServerPort
-    dst: ServerPort
-
-    @classmethod
-    def from_tuple(cls, src_ip: str, src_port: int, dst_ip: str, dst_port: int):
-        return cls(
-            ServerPort(src_ip, src_port),
-            ServerPort(dst_ip, dst_port)
-        )
 
 
 class Subscriber[T](list[Callable[[T], None]]):
@@ -48,10 +27,9 @@ class Subscriber[T](list[Callable[[T], None]]):
 
 
 class Sniffer:
-    ECHO_SIGNATURE = bytes.fromhex("00 00 00 06 00 04")
-
-    def __init__[T: Message, K: Message](self):
+    def __init__[T: Message, K: Message](self, connection_detector: ConnectionDetector):
         self._reassemblers: dict[Connection, TCPReassembler] = defaultdict(TCPReassembler)
+        self._connection_detector = connection_detector
         self._calls: TTLCache[int, type[T]] = TTLCache(maxsize=32, ttl=60)
 
         self._service_types: dict[tuple[int, int], type[T]] = {}
@@ -79,23 +57,11 @@ class Sniffer:
         self._on_service[msg_type].append(callback)
         return callback
 
-    def _is_server(self, payload: bytes) -> bool:
-        return payload.startswith(self.ECHO_SIGNATURE)
-
-    def add_connection(self, connection: Connection):
-        _ = self._reassemblers[connection]
-
     def process_packet(self, connection: Connection, payload: bytes, *, tcp_sequence: int | None = None):
-        if connection not in self._reassemblers:
-            # Discover/lock server flow
-            if self._is_server(payload):
-                logger.info(f"Adding to flow "
-                            f"{connection.src.ip}:{connection.src.port} <-> "
-                            f"{connection.dst.ip}:{connection.dst.port}")
-                self.add_connection(connection)
-            else:
-                return
+        if not self._connection_detector.is_server(connection, payload):
+            return
 
+        # handle fragmentation
         if tcp_sequence is not None:
             try:
                 payload = self._reassemblers[connection].push(tcp_sequence, payload)
