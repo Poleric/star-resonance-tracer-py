@@ -1,6 +1,6 @@
-import itertools
 import logging
 from dataclasses import dataclass
+from socket import AddressFamily
 from typing import Protocol, override, ClassVar
 
 import psutil
@@ -9,6 +9,7 @@ __all__ = (
     "Endpoint",
     "Connection",
     "ConnectionDetector",
+    "CachedConnectionDetector",
     "PidBasedConnectionDetector",
     "SignatureBasedConnectionDetector",
     "ManualConnectionDetector"
@@ -37,16 +38,50 @@ class Connection:
 
 
 class ConnectionDetector(Protocol):
-    def is_server(self, connection: Connection, payload: bytes) -> bool:
+    def is_server(self, connection: Connection) -> bool:
         raise NotImplementedError
 
     def reset(self) -> None:
         raise NotImplementedError
 
+    def as_bpf_filter(self) -> str:
+        raise NotImplementedError
 
-class PidBasedConnectionDetector(ConnectionDetector):
+
+class CachedConnectionDetector(ConnectionDetector):
     def __init__(self):
-        self._connections: set[Connection] = set()
+        self._endpoints: set[Endpoint] = set()
+
+    @override
+    def is_server(self, connection: Connection) -> bool:
+        return connection.src in self._endpoints or connection.dst in self._endpoints
+
+    @override
+    def reset(self) -> None:
+        self._endpoints.clear()
+
+    @override
+    def as_bpf_filter(self) -> str:
+        def _and(*conds: str) -> str:
+            return " and ".join(filter(None, conds))
+
+        def _or(*conds: str) -> str:
+            return " or ".join(filter(None, conds))
+
+        return _and(
+            "tcp[tcpflags] & (tcp-push) != 0",
+            _or(
+                *(_and(f"host {endpoint.ip}", f"port {endpoint.port}") for endpoint in self._endpoints)
+            )
+        )
+
+
+class PidBasedConnectionDetector(CachedConnectionDetector):
+    def add_from_executable_name(self, executable_name: str) -> int:
+        for proc in psutil.process_iter():
+            if proc.name().startswith(executable_name):
+                return self.add_from_pid(proc.pid)
+        return 0
 
     def add_from_pid(self, pid: int) -> int:
         count = 0
@@ -60,59 +95,35 @@ class PidBasedConnectionDetector(ConnectionDetector):
             if "127.0.0.1" in conn.laddr.ip or "127.0.0.1" in conn.raddr.ip:
                 continue
 
-            for src, dst in itertools.permutations((conn.laddr, conn.raddr)):
-                logger.info(f"Detected flow "
-                            f"{src.ip}:{src.port} <-> "
-                            f"{dst.ip}:{dst.port}")
-                self._connections.add(Connection.from_tuple(src.ip, src.port, dst.ip, dst.port))
-                count += 1
+            self._endpoints.add(Endpoint(conn.raddr.ip, conn.raddr.port))
+            logger.info(f"Detected server ip {conn.raddr.ip}:{conn.raddr.port}")
+            count += 1
         return count
 
-    @override
-    def is_server(self, connection: Connection, payload: bytes) -> bool:
-        return connection in self._connections
 
-    @override
-    def reset(self) -> None:
-        self._connections.clear()
-
-
-class SignatureBasedConnectionDetector(ConnectionDetector):
+class SignatureBasedConnectionDetector(CachedConnectionDetector):
     ECHO_SIGNATURE: ClassVar[bytes] = bytes.fromhex("00 00 00 06 00 04")
 
     def __init__(self):
-        self._connections: set[Connection] = set()
+        super().__init__()
 
-    @override
-    def is_server(self, connection: Connection, payload: bytes) -> bool:
-        if connection in self._connections:
+        self.local_ips: set[str] = set()
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == AddressFamily.AF_INET:
+                    self.local_ips.add(addr.address)
+
+    def detect(self, connection: Connection, payload: bytes) -> bool:
+        if self.is_server(connection):
             return True
 
         if payload.startswith(self.ECHO_SIGNATURE):
-            logger.info(f"Detected flow "
-                        f"{connection.src.ip}:{connection.src.port} <-> "
-                        f"{connection.dst.ip}:{connection.dst.port}")
-            self._connections.add(connection)
+            self._endpoints.add(connection.src if connection.src.ip not in self.local_ips else connection.dst)
             return True
 
         return False
 
-    @override
-    def reset(self) -> None:
-        self._connections.clear()
 
-
-class ManualConnectionDetector(ConnectionDetector):
-    def __init__(self):
-        self._connections: set[Connection] = set()
-
-    def add_connection(self, connection: Connection) -> None:
-        self._connections.add(connection)
-
-    @override
-    def is_server(self, connection: Connection, payload: bytes) -> bool:
-        return connection in self._connections
-
-    @override
-    def reset(self) -> None:
-        self._connections.clear()
+class ManualConnectionDetector(CachedConnectionDetector):
+    def add_endpoint(self, endpoint: Endpoint) -> None:
+        self._endpoints.add(endpoint)
