@@ -8,8 +8,6 @@ from google.protobuf.message import Message
 from star_resonance_tracer.frame import Frame
 from star_resonance_tracer.msg import Msg, CallMsg, NotifyMsg, ReturnMsg
 from star_resonance_tracer.processor import process_frame
-from star_resonance_tracer.connection import ConnectionDetector, Connection
-from star_resonance_tracer.utils import TCPReassembler
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +25,8 @@ class Subscriber[T](list[Callable[[T], None]]):
 
 
 class Sniffer:
-    def __init__[T: Message, K: Message](self, connection_detector: ConnectionDetector):
-        self._reassemblers: dict[Connection, TCPReassembler] = defaultdict(TCPReassembler)
-        self._connection_detector = connection_detector
+    def __init__[T: Message, K: Message](self):
         self._calls: TTLCache[int, type[T]] = TTLCache(maxsize=32, ttl=60)
-
         self._service_types: dict[tuple[int, int], type[T]] = {}
         self._return_types: dict[type[K], type[T]] = {}
 
@@ -57,17 +52,7 @@ class Sniffer:
         self._on_service[msg_type].append(callback)
         return callback
 
-    def process_packet(self, connection: Connection, payload: bytes, *, tcp_sequence: int | None = None):
-        if not self._connection_detector.is_server(connection, payload):
-            return
-
-        # handle fragmentation
-        if tcp_sequence is not None:
-            try:
-                payload = self._reassemblers[connection].push(tcp_sequence, payload)
-            except KeyError:
-                return
-
+    def process_packet(self, payload: bytes):
         if not payload:
             return
 
