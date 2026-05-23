@@ -63,10 +63,10 @@ class CachedConnectionDetector(ConnectionDetector):
     @override
     def as_bpf_filter(self) -> str:
         def _and(*conds: str) -> str:
-            return " and ".join(filter(None, conds))
+            return " and ".join(f"({cond})" for cond in conds if cond)
 
         def _or(*conds: str) -> str:
-            return " or ".join(filter(None, conds))
+            return " or ".join(f"({cond})" for cond in conds if cond)
 
         return _and(
             "tcp[tcpflags] & (tcp-push) != 0",
