@@ -71,7 +71,7 @@ class CachedConnectionDetector(ConnectionDetector):
         return _and(
             "tcp and ip",
             _or(
-                *(_and(f"host {endpoint.ip}", f"port {endpoint.port}") for endpoint in self._endpoints)
+                *(f"host {endpoint.ip} and port {endpoint.port}" for endpoint in self._endpoints)
             )
         )
 
@@ -93,6 +93,9 @@ class PidBasedConnectionDetector(CachedConnectionDetector):
                 continue
 
             if "127.0.0.1" in conn.laddr.ip or "127.0.0.1" in conn.raddr.ip:
+                continue
+
+            if conn.raddr.port in (80, 443):
                 continue
 
             self._endpoints.add(Endpoint(conn.raddr.ip, conn.raddr.port))
