@@ -69,7 +69,7 @@ class CachedConnectionDetector(ConnectionDetector):
             return " or ".join(f"({cond})" for cond in conds if cond)
 
         return _and(
-            "tcp[tcpflags] & (tcp-push) != 0",
+            "tcp and ip",
             _or(
                 *(_and(f"host {endpoint.ip}", f"port {endpoint.port}") for endpoint in self._endpoints)
             )
